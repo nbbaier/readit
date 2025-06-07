@@ -8,6 +8,7 @@ const app = await alchemy("cloudflare-vite", {
 });
 
 export const website = await Vite("vite-website", {
+	name: "readit",
 	main: "./worker/index.ts",
 	command: "bun run build",
 });
