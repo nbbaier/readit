@@ -1,46 +1,101 @@
-import { useState } from "react";
+import { type FormEvent, useState } from "react";
 import "./App.css";
 
-function App() {
-   const [count, setCount] = useState(0);
-   const [name, setName] = useState("unknown");
+interface Article {
+	title: string;
+	byline: string;
+	content: string;
+	textContent: string;
+	excerpt: string;
+}
 
-   return (
-      <>
-         <h1>Vite + React + Cloudflare</h1>
-         <div className="card">
-            <button
-               type="button"
-               onClick={() => setCount((count) => count + 1)}
-               aria-label="increment"
-            >
-               count is {count}
-            </button>
-            <p>
-               Edit <code>src/App.tsx</code> and save to test HMR
-            </p>
-         </div>
-         <div className="card">
-            <button
-               type="button"
-               onClick={() => {
-                  fetch("/api/")
-                     .then((res) => res.json() as Promise<{ name: string }>)
-                     .then((data) => setName(data.name));
-               }}
-               aria-label="get name"
-            >
-               Name from API is: {name}
-            </button>
-            <p>
-               Edit <code>worker/index.ts</code> to change the name
-            </p>
-         </div>
-         <p className="read-the-docs">
-            Click on the Vite and React logos to learn more
-         </p>
-      </>
-   );
+function App() {
+	const [url, setUrl] = useState("");
+	const [article, setArticle] = useState<Article | null>(null);
+	const [loading, setLoading] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	const handleSubmit = async (e: FormEvent) => {
+		e.preventDefault();
+		if (!url) return;
+
+		setLoading(true);
+		setError(null);
+		setArticle(null);
+
+		// Clean up the URL input
+		let targetUrl = url.trim();
+		if (!targetUrl.startsWith("http")) {
+			targetUrl = `https://${targetUrl}`;
+		}
+
+		try {
+			const res = await fetch(`/api/read?url=${encodeURIComponent(targetUrl)}`);
+			if (!res.ok) {
+				// Try to get error message from json
+				try {
+					const errData = await res.json();
+					throw new Error(errData.error || "Failed to fetch article");
+				} catch (err) {
+					throw new Error(err instanceof Error ? err.message : "Unknown error");
+				}
+			}
+			const data = await res.json();
+			setArticle(data);
+		} catch (e: unknown) {
+			if (e instanceof Error) {
+				setError(e.message);
+			} else {
+				setError("Unknown error");
+			}
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	if (article) {
+		return (
+			<div className="reader-view">
+				<button
+					type="button"
+					className="back-button"
+					onClick={() => setArticle(null)}
+				>
+					← Read another
+				</button>
+				<header>
+					<h1>{article.title}</h1>
+					{article.byline && <div className="byline">By {article.byline}</div>}
+				</header>
+				<div
+					className="article-content"
+					dangerouslySetInnerHTML={{ __html: article.content }}
+				/>
+			</div>
+		);
+	}
+
+	return (
+		<div className="container">
+			<h1>ReadIt</h1>
+			<p>Enter a URL to view it in distraction-free reader mode.</p>
+
+			<form onSubmit={handleSubmit}>
+				<input
+					type="text"
+					placeholder="example.com/article"
+					value={url}
+					onChange={(e) => setUrl(e.target.value)}
+					required
+				/>
+				<button type="submit" disabled={loading}>
+					{loading ? "Loading..." : "Read"}
+				</button>
+			</form>
+
+			{error && <div className="error">{error}</div>}
+		</div>
+	);
 }
 
 export default App;
