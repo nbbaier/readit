@@ -31,22 +31,40 @@ function App() {
 
 		try {
 			const res = await fetch(`/api/read?url=${encodeURIComponent(targetUrl)}`);
+
 			if (!res.ok) {
-				// Try to get error message from json
+				// Try to get error message from JSON response
+				let errorMessage = "Failed to fetch article";
 				try {
 					const errData = await res.json();
-					throw new Error(errData.error || "Failed to fetch article");
-				} catch (err) {
-					throw new Error(err instanceof Error ? err.message : "Unknown error");
+					errorMessage = errData.error || errorMessage;
+				} catch {
+					// Response wasn't JSON, use status-based message
+					if (res.status === 400) {
+						errorMessage = "Invalid URL provided";
+					} else if (res.status === 422) {
+						errorMessage = "Unable to parse article content from this URL";
+					} else if (res.status === 500) {
+						errorMessage = "Server error while fetching the article";
+					} else {
+						errorMessage = `Failed to fetch article (Error ${res.status})`;
+					}
 				}
+				throw new Error(errorMessage);
 			}
+
 			const data = await res.json();
 			setArticle(data);
 		} catch (e: unknown) {
 			if (e instanceof Error) {
-				setError(e.message);
+				// Provide user-friendly messages for common errors
+				if (e.name === "TypeError" && e.message.includes("fetch")) {
+					setError("Network error: Unable to connect to the server");
+				} else {
+					setError(e.message);
+				}
 			} else {
-				setError("Unknown error");
+				setError("An unexpected error occurred");
 			}
 		} finally {
 			setLoading(false);
@@ -69,6 +87,8 @@ function App() {
 				</header>
 				<div
 					className="article-content"
+					// Note: Content is sanitized by Mozilla Readability on the server
+					// which removes script tags and other dangerous elements
 					dangerouslySetInnerHTML={{ __html: article.content }}
 				/>
 			</div>

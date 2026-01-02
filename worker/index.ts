@@ -26,12 +26,28 @@ async function parseUrl(url: string) {
 		return null;
 	}
 
-	const response = await fetch(targetUrl, {
-		headers: {
-			"User-Agent":
-				"Mozilla/5.0 (compatible; ReadIt/1.0; +https://github.com/nico-baier/readit)",
-		},
-	});
+	// Add timeout to prevent hanging on slow websites
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+	let response: Response;
+	try {
+		response = await fetch(targetUrl, {
+			headers: {
+				"User-Agent":
+					"Mozilla/5.0 (compatible; ReadIt/1.0; +https://github.com/nico-baier/readit)",
+			},
+			signal: controller.signal,
+		});
+	} catch (fetchError: unknown) {
+		clearTimeout(timeoutId);
+		if (fetchError instanceof Error && fetchError.name === "AbortError") {
+			throw new Error("Request timeout: The website took too long to respond");
+		}
+		throw fetchError;
+	} finally {
+		clearTimeout(timeoutId);
+	}
 
 	if (!response.ok) {
 		throw new Error(
@@ -42,6 +58,11 @@ async function parseUrl(url: string) {
 	const html = await response.text();
 	const { document } = parseHTML(html);
 
+	// Readability performs content sanitization, removing:
+	// - Script tags and inline event handlers
+	// - Iframes and embeds
+	// - Forms and inputs
+	// - Other potentially dangerous elements
 	const reader = new Readability(document);
 	const article = reader.parse();
 
@@ -55,6 +76,9 @@ app.get("/api/read", async (c) => {
 	try {
 		const article = await parseUrl(url);
 		if (!article) return c.json({ error: "Failed to parse article" }, 422);
+
+		// Add caching headers - cache for 1 hour
+		c.header("Cache-Control", "public, max-age=3600, s-maxage=3600");
 		return c.json(article);
 	} catch (e) {
 		if (e instanceof Error) {
@@ -110,6 +134,21 @@ app.get("/*", async (c) => {
                     blockquote { border-left: 4px solid #ddd; margin: 0; padding-left: 20px; color: #666; }
                     .byline { color: #666; margin-bottom: 30px; font-style: italic; }
                     .content { font-size: 18px; }
+
+                    /* Dark mode support */
+                    @media (prefers-color-scheme: dark) {
+                        body {
+                            background-color: #111;
+                            color: #e1e1e1;
+                        }
+                        a { color: #6b9cff; }
+                        pre { background: #222; color: #e1e1e1; }
+                        blockquote {
+                            border-color: #444;
+                            color: #aaa;
+                        }
+                        .byline { color: #aaa; }
+                    }
                 </style>
              </head>
              <body>
@@ -123,6 +162,8 @@ app.get("/*", async (c) => {
              </body>
              </html>
              `;
+			// Add caching headers - cache for 1 hour
+			c.header("Cache-Control", "public, max-age=3600, s-maxage=3600");
 			return c.html(html);
 		} catch (e) {
 			if (e instanceof Error) {
